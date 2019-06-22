@@ -1,0 +1,582 @@
+
+############################################################################
+#Unconditional Coverage
+############################################################################
+
+
+logL<-function(I,a,b,z,VaR){
+  l<-length(VaR)
+  
+  m <- sum(I)
+  v<-which(I == 1)
+  v<-c(0,v,l) 
+  d<-c(diff(v))
+  if(a<0 | a>=1 | b<0 | b>1 | z<0 | m<3){logL<-NA 
+  }else{
+    s<-rep(0,length(d))
+    f<-rep(0,length(d))
+    for(i in 1:length(d)){ 
+      lambda<-mat.or.vec(length(d),1)
+      lambda<- function(a, b, z, d, VaR){
+        lambda <- a*d^(b-1)*(exp(-z*(VaR))) 
+        return(lambda)
+      }
+      VaR1<-VaR[(v[i]+1):v[i+1]]
+      ds<-seq(1:d[i])
+      
+      lhelp<-lambda(a, b, z, ds,  VaR1)
+      lhelp<-na.omit(lhelp)
+      lf<-c(1-lhelp[1:(length(lhelp)-1)], lhelp[length(lhelp)]) 
+      f[i]<-prod(lf) 
+      
+      
+      ls<-c(1-lhelp[1:(length(lhelp)-1)])
+      s[i]<-prod(ls)
+    } 
+    part1 <- ifelse(d[1]>0,log(s[1]), log(f[1]) )
+    part2 <- sum(log(f[2:(length(d)-1)])) 
+    part3 <- ifelse(d[length(d)]<l,log(s[length(d)]), log(f[length(d)]))
+    
+    logL <- part1 + part2 + part3
+    return(-logL)
+    
+  }
+}
+  
+geoVar1Test<-function(I, p, N, VaR){ 
+    
+    l <- length(VaR)
+    
+    
+      logL_geotest1_H0<-{#Unter H0
+        a=p; b=1; z=0
+        logL(I,a,b,z,VaR)
+      }
+      
+      logL_geotest1_H1<-function(Omega,I,VaR){#Unter H1
+        a=Omega[1]; b=1; z=0
+        logL(I,a,b,z,VaR)
+      }
+      
+      LL_H0_1 <- logL_geotest1_H0
+      
+      lower_boundary<- 1e-8; upper_boundary<-0.99999  
+      LL_H1_1 <- optim(c(0.2),fn=logL_geotest1_H1, I=I,VaR=VaR, lower=lower_boundary, upper=upper_boundary, method= "L-BFGS-B")
+      
+      if(LL_H1_1$convergence>0){
+        return(list(Result="Test fails"))
+        
+      }else{
+        
+      Teststatistic <- -2*(LL_H0_1-LL_H1_1$value)*(-1) 
+      Teststatistic
+       
+      
+      empVer<-mat.or.vec(1,N)
+      
+      spec = garchSpec(model=list(), cond.dist = "std")
+      VaRhelp<-garchSim(spec, n = l)
+      
+      for(i in 1:N){
+        cat(i, "\r")
+        check=0
+        while(check==0){
+          check=0
+          while(check==0){
+            iTest<-rbinom(n= l, size=1, prob = alpha)
+            if(sum(iTest)>2) check=1
+          }
+          logL_geotest1_H0<-{#Unter H0
+            a=p; b=1; z=0
+            logL(iTest,a,b,z,VaRhelp)
+          }
+          LL_H0_1test <- logL_geotest1_H0
+          
+          lower_boundary<- 1e-8; upper_boundary<-0.99999  
+          LL_H1_1test <- try(optim(c(0.2), fn=logL_geotest1_H1, I=iTest,VaR=VaRhelp,lower=lower_boundary,  upper=upper_boundary, method= "L-BFGS-B")$value, silent=TRUE)
+          
+          if(is.numeric(LL_H0_1test)&is.numeric(LL_H1_1test)) {check=1
+          empVer[,i] <- (-2*(LL_H0_1test-LL_H1_1test)*(-1))
+          }
+        }
+      }
+      
+      U0<-runif(1, min=0, max=1)
+      Ui<-runif(N, min=0, max=1)
+          
+      h<-mat.or.vec(1,N)
+      t<-mat.or.vec(1,N)
+      for(i in 1:N){
+        h[,i]<-ifelse(empVer[,i]<=Teststatistic,1,0)
+        t[,i]<-ifelse(empVer[,i]<-Teststatistic,1,0)*(ifelse(Ui[i]>U0,1,0))
+      }
+      
+      G<- 1-(1/N)*sum(h)+(1/N)*sum(t)
+      pval<-(N*G+1)/(N+1)
+      
+      return(list(Testatistik=Teststatistic, pvalue=pval))
+      
+    } 
+  }
+  
+#Example: geoVar1Test(i501, 0.01,1000, varh500) 
+
+############################################################################
+#Duration Independence
+############################################################################
+
+geoVar2Test<-function(I, N, alpha, VaR){  
+  
+  l<-length(VaR)
+  
+logL_geotest2_H0<-function(Omega,I,VaR){#Unter H0
+  a=Omega[1]; b=1; z=0
+  logL(I,a,b,z,VaR)
+}
+logL_geotest2_H1<-function(Omega,I,VaR){#Unter H1
+  a=Omega[1]; b=Omega[2]; z=0
+  logL(I,a,b,z,VaR)
+}
+
+lower_boundary<- c(1e-8); upper_boundary<-rep(0.9999) 
+LL_H0_2 <- optim(c(0.2), fn=logL_geotest2_H0, I=I,VaR=VaR, lower=lower_boundary, upper=upper_boundary,  method= "L-BFGS-B") 
+
+lower_boundary<- c(1e-8,1e-8); upper_boundary<-rep(0.9999,1) 
+LL_H1_2 <- optim(c(0.2,0.6), fn=logL_geotest2_H1, I=I,VaR=VaR, lower=lower_boundary, upper=upper_boundary, method= "L-BFGS-B")
+
+if(LL_H1_2$convergence>0){
+  return(list(Result="Test fails"))
+}else{
+  
+Teststatistic <- -2*(LL_H0_2$value-LL_H1_2$value)*(-1)
+Teststatistic
+
+
+empVer<-mat.or.vec(1,N)
+
+spec = garchSpec(model=list(), cond.dist = "std")
+VaRhelp<-garchSim(spec, n = l)
+
+for(i in 1:N){
+  cat(i, "\r")
+  check=0
+  while(check==0){
+    check=0
+    while(check==0){
+      iTest<-rbinom(n= l, size=1, prob = alpha)
+      if(sum(iTest)>2) check=1
+    }
+    lower_boundary<- c(1e-8); upper_boundary<-rep(0.9999) 
+    LL_H0_2test <- try(optim(c(0.2), fn=logL_geotest2_H0, I=iTest,VaR=VaRhelp, lower=lower_boundary, upper=upper_boundary, method= "L-BFGS-B")$value,  silent=TRUE)
+    
+    lower_boundary<- c(1e-8,1e-8); upper_boundary<-rep(0.9999,1) 
+    LL_H1_2test <- try(optim(c(0.2,0.6), fn=logL_geotest2_H1, I=iTest,VaR=VaRhelp,lower=lower_boundary,  upper=upper_boundary, method= "L-BFGS-B")$value, silent=TRUE)
+    
+    if(is.numeric(LL_H0_2test)&is.numeric(LL_H1_2test)) {check=1
+    empVer[,i] <- (-2*(LL_H0_2test-LL_H1_2test)*(-1))
+    }
+  }
+}
+
+U0<-runif(1, min=0, max=1)
+Ui<-runif(N, min=0, max=1)
+h<-mat.or.vec(1,N)
+t<-mat.or.vec(1,N)
+for(i in 1:N){
+h[,i]<-ifelse(empVer[,i] <= Teststatistic,1,0)
+  t[,i]<-ifelse(empVer[,i] == Teststatistic,1,0)*(ifelse(Ui[i]>U0,1,0))
+}
+G<- 1-(1/N)*sum(h)+(1/N)*sum(t)
+pval<-(N*G+1)/(N+1)
+
+return(list(Testatistik=Teststatistic, pvalue=pval)) #
+}
+} 
+
+#Example: geoVar2Test(i501, 1000, 0.01, varh500)
+
+############################################################################
+#VaR Independence
+############################################################################
+
+
+
+geoVar3Test<-function(I, N,alpha, VaR){
+   
+  l<-length(VaR)  
+  
+  logL_geotest3_H0<-function(Omega,I,VaR){
+    a=Omega[1]; b=Omega[2]; z=0
+    logL(I,a,b,z,VaR)
+  }
+  
+  logL_geotest3_H1<-function(Omega,I,VaR){
+      a=Omega[1]; b=Omega[2]; z=Omega[3]
+      logL(I,a,b,z,VaR)
+  }
+       
+    lower_boundary<- c(1e-8,1e-8); upper_boundary<-rep(0.9999,1) #, control = list(fnscale=-1) 
+    LL_H0_3 <- optim(c(0.2,0.6), fn=logL_geotest3_H0, I=I,VaR=VaR ,lower=lower_boundary, upper=upper_boundary,  method="L-BFGS-B" ) #method= "Nelder-Mead"  
+  
+  lower_boundary<- c(1e-8,1e-8,0); upper_boundary<-rep(0.9999,1,1e3) 
+   LL_H1_3 <- optim(c(0.2,0.6,0.4), fn=logL_geotest3_H1, I=I,VaR=VaR , lower=lower_boundary, upper=upper_boundary ,   method="L-BFGS-B")
+  
+  if(LL_H0_3$convergence>0| LL_H1_3$convergence>0){
+    return(list(Result="Test fails"))
+           
+  }else{
+  
+    Teststatistic <- -2*(LL_H0_3$value-LL_H1_3$value)*(-1) 
+    Teststatistic
+     
+    empVer<-mat.or.vec(1,N)
+    
+    spec = garchSpec(model=list(), cond.dist = "std")
+    VaRhelp<-garchSim(spec, n = l)
+    
+    for(i in 1:N){
+      cat(i, "\r")
+      check=0
+      while(check==0){
+        check=0
+        while(check==0){
+          iTest<-rbinom(n= l, size=1, prob = alpha)
+          if(sum(iTest)>2) check=1
+        }
+        lower_boundary<- c(1e-8,1e-8); upper_boundary<-rep(0.9999,1)  
+        LL_H0_3test <- try(optim(c(0.2,0.6), fn=logL_geotest3_H0, I=iTest,VaR=VaRhelp, lower=lower_boundary, upper=upper_boundary, method= "L-BFGS-B")$value,  silent=TRUE)
+        
+        lower_boundary<- c(1e-8,1e-8,0); upper_boundary<-rep(0.9999,1,1e3) 
+        LL_H1_3test <- try(optim(c(0.2,0.6,0.3), fn=logL_geotest3_H1, I=iTest,VaR=VaRhelp,lower=lower_boundary,  upper=upper_boundary, method= "L-BFGS-B")$value, silent=TRUE)
+        
+        if(is.numeric(LL_H0_3test)&is.numeric(LL_H1_3test)) {check=1
+        empVer[,i] <- (-2*(LL_H0_3test-LL_H1_3test)*(-1))
+        }
+      }
+    }
+    U0<-runif(1, min=0, max=1)
+    Ui<-runif(N, min=0, max=1)
+    h<-mat.or.vec(1,N)
+    t<-mat.or.vec(1,N)
+    for(i in 1:N){
+      h[,i]<-ifelse(empVer[,i] <= Teststatistic,1,0)
+      t[,i]<-ifelse(empVer[,i] == Teststatistic,1,0)*(ifelse(Ui[i]>U0,1,0))
+    }
+    
+    G<- 1-(1/N)*sum(h)+(1/N)*sum(t)   
+    pval<-(N*G+1)/(N+1)
+    
+    return(list(Testatistik=Teststatistic, pvalue=pval))
+   }
+  } 
+
+#Example: geoVar3Test(i501, 1000, 0.01, varh500)
+
+############################################################################
+#Geometric Test
+############################################################################
+
+geoVar4Test<-function(I, p, N, VaR){
+    l<-length(VaR)        
+    
+    logL_geotest4_H1<-function(Omega,I,VaR){
+      a=Omega[1]; b=Omega[2]; z=0
+      logL(I,a,b,z,VaR)
+    }
+    
+    logL_geotest4_H0<-{
+      a=p; b=1; z=0
+      logL(I,a,b,z,VaR)
+    }
+   
+    LL_H0_4 <- logL_geotest4_H0
+    
+    lower_boundary<- c(1e-8,1e-8); upper_boundary<-rep(0.9999,1)
+    LL_H1_4 <- optim(c(0.2, 0.6), fn=logL_geotest4_H1,  I=I,VaR=VaR,  lower=lower_boundary, upper=upper_boundary, method= "L-BFGS-B")
+    
+    if(LL_H1_4$convergence>0){
+      return(list(Result="Test fails"))
+      
+    }else{
+    Teststatistic <- -2*(LL_H0_4-LL_H1_4$value)*(-1)
+    Teststatistic
+    empVer<-mat.or.vec(1,N)
+    
+    spec = garchSpec(model=list(), cond.dist = "std")
+    VaRhelp<-garchSim(spec, n = l)
+    
+    for(i in 1:N){
+      cat(i, "\r")
+      check=0
+      while(check==0){
+        check=0
+        while(check==0){
+          iTest<-rbinom(n= l, size=1, prob = alpha)
+          if(sum(iTest)>2) check=1
+        }
+        logL_geotest4_H0<-{
+          a=p; b=1; z=0
+          logL(iTest,a,b,z,VaRhelp)
+        }
+        LL_H0_4test <- logL_geotest4_H0
+        
+        lower_boundary<- c(1e-8,1e-8,0); upper_boundary<-rep(0.9999,1,1e3) 
+        LL_H1_4test <- try(optim(c(0.2, 0.6), fn=logL_geotest4_H1,  I=iTest,VaR=VaRhelp, lower=lower_boundary, upper=upper_boundary, method= "L-BFGS-B")$value, silent=TRUE)
+        
+        if(is.numeric(LL_H0_4test)&is.numeric(LL_H1_4test)) {check=1
+        empVer[,i] <- (-2*(LL_H0_4test-LL_H1_4test)*(-1))
+        }
+      }
+    }
+    
+    U0<-runif(1, min=0, max=1)
+    Ui<-runif(N, min=0, max=1)
+    h<-mat.or.vec(1,N)
+    t<-mat.or.vec(1,N)
+    for(i in 1:N){
+      h[,i]<-ifelse(empVer[,i] <= Teststatistic,1,0)
+      t[,i]<-ifelse(empVer[,i] == Teststatistic,1,0)*(ifelse(Ui[i]>U0,1,0))
+    }
+    
+    G<- 1-(1/N)*sum(h)+(1/N)*sum(t)   
+    pval<-(N*G+1)/(N+1)
+    
+    return(list(Testatistik=Teststatistic, pvalue=pval))
+        
+    
+  }
+}
+
+#Example: geoVar4Test(i501, 0.01, 1000, varh500 )
+
+
+############################################################################
+#Geometric VaR
+############################################################################
+
+geoVar5Test<-function(I,p,N, VaR){    
+  l<-length(VaR)  
+  
+    logL_geotest5_H1<-function(Omega,I,VaR){#Unter H0
+      a=Omega[1]; b=Omega[2]; z=Omega[3]
+      logL(I,a,b,z,VaR)
+    }
+    
+    logL_geotest5_H0<-{#Unter H0
+      a=p; b=1; z=0
+      logL(I,a,b,z,VaR)
+    }
+    
+    LL_H0_5 <- logL_geotest5_H0
+    
+    lower_boundary<- c(1e-8,1e-8,1e-8); upper_boundary<-rep(0.9999,1,1e3)  
+    LL_H1_5 <- optim(c(0.2,0.6,0.3), fn=logL_geotest5_H1,  I=I,VaR=VaR,  lower=lower_boundary, upper=upper_boundary,method= "L-BFGS-B")
+    
+  if(LL_H1_5$convergence>0){
+    return(list(Result="Test fails"))
+    
+  }else{
+  
+    Teststatistic <- -2*(LL_H0_5-LL_H1_5$value)*(-1) 
+    Teststatistic
+    empVer<-mat.or.vec(1,N)
+    
+    spec = garchSpec(model=list(), cond.dist = "std")
+    VaRhelp<-garchSim(spec, n = l)
+    
+    for(i in 1:N){
+      cat(i, "\r")
+      check=0
+      while(check==0){
+        check=0
+        while(check==0){
+          iTest<-rbinom(n= l, size=1, prob = alpha)
+          if(sum(iTest)>2) check=1
+        }
+        logL_geotesthelp_H0<-{#Unter H0
+          a=p; b=1; z=0
+          logL(I=iTest,a,b,z,VaR=VaRhelp) 
+        }
+        LL_H0_5test <- logL_geotesthelp_H0
+        
+        lower_boundary<- c(1e-8,1e-8,0); upper_boundary<-rep(0.9999,1,1e3) 
+        LL_H1_5test <- try(optim(c(0.2,0.6,0.3), fn=logL_geotest5_H1, I=iTest,VaR=VaRhelp,lower=lower_boundary,  upper=upper_boundary, method= "L-BFGS-B")$value, silent=TRUE)
+        
+        if(is.numeric(LL_H0_5test)&is.numeric(LL_H1_5test)) {check=1
+        empVer[,i] <- (-2*(LL_H0_5test-LL_H1_5test)*(-1))
+        }
+      }
+    }     
+  
+  iTest<-mat.or.vec(l,N)
+  for(i in 1:N){  
+    check=0
+    while(check==0){
+      iTest[,i]<-rbinom(n= l, size=1, prob = p)
+      if(sum(iTest[,i])>2) check=1
+    }
+  }
+  spec = garchSpec(model=list(), cond.dist = "std")
+  VaRhelp<-garchSim(spec, n = l)
+  empVer<-mat.or.vec(1,N)
+  
+  logL_geotesthelp_H1<-function(Omega,I,VaR){#Unter H0
+    a=Omega[1]; b=Omega[2]; z=Omega[3]
+    logL(I,a,b,z,VaR)
+  }
+  
+  logL_geotesthelp_H0<-{#Unter H0
+    a=p; b=1; z=0
+    logL(I,a,b,z,VaR)
+  }
+  
+  for(i in 1:N){
+    logL_geotesthelp_H0<-{#Unter H0
+      a=p; b=1; z=0
+      logL(I=iTest[,i],a,b,z,VaR=VaRhelp) 
+    }
+    LL_H0_5test <- logL_geotesthelp_H0
+    
+    #lower_boundary<- c(1e-8,01e-8,1e-8); upper_boundary<-rep(0.9999,1,1e3) 
+    LL_H1_5test <- optim(c(0.2,0.6,0.3), fn=logL_geotesthelp_H1, I=iTest[,i],VaR=VaRhelp,method= "Nelder-Mead")
+    
+    empVer[,i] <- -2*(LL_H0_5test-LL_H1_5test$value)*(-1)
+  }
+  
+  U0<-runif(1, min=0, max=1)
+  Ui<-runif(N, min=0, max=1)
+  h<-mat.or.vec(1,N)
+  t<-mat.or.vec(1,N)
+  for(i in 1:N){
+    h[,i]<-ifelse(empVer[,i] <= Teststatistic,1,0)
+    t[,i]<-ifelse(empVer[,i] == Teststatistic,1,0)*(ifelse(Ui[i]>U0,1,0))
+  }
+  
+  G<- 1-(1/N)*sum(h)+(1/N)*sum(t)
+  pval<-(N*G+1)/(N+1)
+  
+  return(list(Testatistik=Teststatistic, pvalue=pval))
+    
+  }
+}
+
+#Example: geoVar5Test(i501,0.01, 1000, varh500)
+
+############################################################################
+#VaR-Dependence
+############################################################################
+
+geoVar6Test<-function(I, N, p, VaR){    
+  
+  l<-length(VaR)
+  logL<-function(I,a,b,z,VaR){
+    m <- sum(I)
+    v<-which(I == 1)
+    v<-c(0,v,l) 
+    d<-c(diff(v))
+    l<-length(VaR)
+    if(a<0 | a>=1 | b<0 | b>1 | z<0 | m<3){logL<-NA 
+    }else{
+      s<-rep(0,length(d))
+      f<-rep(0,length(d))
+      for(i in 1:length(d)){ 
+        lambda<-mat.or.vec(length(d),1)
+        lambda<- function(a, b, z, d, VaR){
+          lambda <- a*d^(b-1)*(exp(-z*(VaR))) 
+          return(lambda)
+        }
+        VaR1<-VaR[(v[i]+1):v[i+1]]
+        ds<-seq(1:d[i])
+        
+        lhelp<-lambda(a, b, z, ds,  VaR1)
+        lhelp<-na.omit(lhelp)
+        lf<-c(1-lhelp[1:(length(lhelp)-1)], lhelp[length(lhelp)]) 
+        f[i]<-prod(lf) 
+        
+        
+        ls<-c(1-lhelp[1:(length(lhelp)-1)])
+        s[i]<-prod(ls)
+      } 
+      part1 <- ifelse(d[1]>0,log(s[1]), log(f[1]) )
+      part2 <- sum(log(f[2:(length(d)-1)])) 
+      part3 <- ifelse(d[length(d)]<l,log(s[length(d)]), log(f[length(d)]))
+      
+      logL <- part1 + part2 + part3
+      return(-logL)
+      
+    }
+  }
+  
+  logL_geotest6_H1<-function(Omega,I,VaR){#Unter H0
+    a=Omega[1]; b=1; z=Omega[2]
+    logL(I,a,b,z,VaR)
+  }
+  
+  logL_geotest6_H0<-{#Unter H0
+    a=p; b=1; z=0
+    logL(I,a,b,z,VaR)
+  }
+  
+  LL_H0_6 <- logL_geotest6_H0
+  
+  lower_boundary<- c(1e-8,1e-8); upper_boundary<-rep(0.9999,1e3) 
+  LL_H1_6 <- optim(c(0.2,0.3), fn=logL_geotest6_H1,  I=I,VaR=VaR, lower=lower_boundary, upper=upper_boundary,  method= "L-BFGS-B")
+  
+  if(LL_H1_6$convergence>0){
+    return(list(Result="Test fails"))
+    
+  }else{
+    
+    Teststatistic <- -2*(LL_H0_6-LL_H1_6$value)*(-1) 
+    Teststatistic
+    
+    empVer<-mat.or.vec(1,N)
+    
+    spec = garchSpec(model=list(), cond.dist = "std")
+    VaRhelp<-garchSim(spec, n = l)
+    
+    for(i in 1:N){
+      cat(i, "\r")
+      check=0
+      while(check==0){
+        check=0
+        while(check==0){
+          iTest<-rbinom(n= l, size=1, prob = alpha)
+          if(sum(iTest)>2) check=1
+        }
+        logL_geotesthelp_H0<-{#Unter H0
+          a=p; b=1; z=0
+          logL(I=iTest,a,b,z,VaR=VaRhelp) 
+        }
+        LL_H0_6test <- logL_geotesthelp_H0
+        
+        lower_boundary<- c(1e-8,1e-8); upper_boundary<-rep(0.9999,1e3) 
+        LL_H1_6test <- try(optim(c(0.2,0.3), fn=logL_geotest5_H1, I=iTest,VaR=VaRhelp,lower=lower_boundary,  upper=upper_boundary, method= "L-BFGS-B")$value, silent=TRUE)
+        
+        if(is.numeric(LL_H0_6test)&is.numeric(LL_H1_6test)) {check=1
+        empVer[,i] <- (-2*(LL_H0_6test-LL_H1_6test)*(-1))
+        }
+      }
+    }     
+    
+    
+    U0<-runif(1, min=0, max=1)
+    Ui<-runif(N, min=0, max=1)
+    h<-mat.or.vec(1,N)
+    t<-mat.or.vec(1,N)
+    for(i in 1:N){
+      h[,i]<-ifelse(empVer[,i] <= Teststatistic,1,0)
+      t[,i]<-ifelse(empVer[,i] == Teststatistic,1,0)*(ifelse(Ui[i]>U0,1,0))
+    }
+    
+    G<- 1-(1/N)*sum(h)+(1/N)*sum(t)
+    pval<-(N*G+1)/(N+1)
+    
+    return(list(Testatistik=Teststatistic, pvalue=pval))
+    
+  }
+}
+
+#Example: geoVar6Test(i501, 1000, 0.01, varh500)
+
+
