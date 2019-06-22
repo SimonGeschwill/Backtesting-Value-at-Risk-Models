@@ -1,0 +1,55 @@
+library(Quandl) 
+library(tseries)
+library(rstudio)
+library(VaRES)
+library(betategarch)
+library(bayesGARCH)
+library(TTR)
+library(PerformanceAnalytics)  
+library(psych)
+library(lmtest)
+library(fGarch)
+library(forecast)
+library(timeSeries)
+library(Rcmdr)
+library(rugarch)
+library(WeightedPortTest)
+library(iterators)
+library(foreach)
+library(survival)
+library("stats4")
+library(quantmod)
+library(xts)
+library(qcc)
+source("ewma.R")
+source("VaRLR.R")
+#####
+library(extRemes)
+library(fields)
+library(evd)
+library(evdbayes)
+library(ismev)
+library(SpatialExtremes)
+
+Quandl.auth("XXX")
+
+
+ruhig_Dax <- Quandl("YAHOO/INDEX_GDAXI",sort = c("asc"), start_date = "2004-01-01", end_date = "2006-01-01")[,c("Date","Close")]
+close<-ruhig_Dax$Close 
+r = diff(log(close))
+dates<-ruhig_Dax$Date
+
+spec1 = ugarchspec(variance.model = list(model = "fGARCH", garchOrder = c(1,1), submodel = "GARCH"),  mean.model = list(armaOrder = c(0,0), include.mean = FALSE), distribution.model = "std") #include.mean = TRUE aus der mean.model klammer genommen
+r.garch = ugarchroll(spec1, data = r, n.ahead = 1, n.start = 263, refit.every = 1, refit.window = "recursive", window.size = 250, solver = "solnp",  fit.control = list(), solver.control=list(), calculate.VaR = TRUE, VaR.alpha = c(0.001, 0.01, 0.02), keep.coef = TRUE)
+r.garchmodel = ugarchfit(spec1, r, solver="solnp")
+garchdata<-as.data.frame(x = r.garch, which = "VaR")
+varg01 <- garchdata$"alpha(0%)"
+i21<-ifelse((varg01>r0), 1, 0) 
+
+spec2 = ugarchspec(variance.model = list(model = "fGARCH", garchOrder = c(1,1), submodel = "GARCH"),  mean.model = list(armaOrder = c(0,0), include.mean = FALSE), distribution.model = "norm") 
+r.garchn = ugarchroll(spec2, data = r, n.ahead = 1, n.start = 263, refit.every = 1, refit.window = "recursive", window.size = 250, solver = "solnp",  fit.control = list(), solver.control = list(), calculate.VaR = TRUE, VaR.alpha = c(0.001, 0.01, 0.02, 0.05), keep.coef = TRUE)
+r.garchnmodel = ugarchfit(spec2, r, solver="solnp")
+r.garchnmodel
+ngarchdata<-as.data.frame(x = r.garchn, which = "VaR")
+vargn01 <- ngarchdata$"alpha(0%)"
+i31<-ifelse((vargn01>r0), 1, 0) 
