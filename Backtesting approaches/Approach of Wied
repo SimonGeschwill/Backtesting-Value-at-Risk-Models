@@ -1,0 +1,256 @@
+############################################################################
+#Unconditional Coverage
+############################################################################
+
+ucTest<- function(I, alpha, mcs){
+  n=length(I)
+  m<-sum(I)
+  epsilon<-rnorm(n = mcs+1  ,mean = 0, sd = 1)*0.001
+  MCSuc<- m +epsilon[mcs+1]
+  
+  Iuc_hat<-mat.or.vec(n,mcs)
+  MCSuc_hat<-mat.or.vec(1,mcs)
+    for(i in 1:mcs){
+      Iuc_hat[,i]<-rbinom(n= n, size=1, prob = alpha)
+      MCSuc_hat[i]<- sum(Iuc_hat[,i])+ epsilon[i] 
+  }
+  MCSuc_hat<-sort(MCSuc_hat,decreasing=TRUE)#eigentlich unnötig, da die folgende Funktion quantile die sortierung nicht braucht
+  crit_val <- quantile(MCSuc_hat, probs=c(0.01,0.02,0.05,0.95,0.98,0.99))
+  return(list(MCSuc_Test=MCSuc, crit_val=crit_val)) #RUckgabe via $-Function
+}
+
+#Example: ucTest(i1, alpha = 0.01, mcs = 10000)
+
+############################################################################
+#IID-Property
+############################################################################
+
+iidTest<- function(I, alpha, mcs){
+    n=length(I) 
+    m<-sum(I) 
+    v<-which(I == 1) 
+    epsilon2<-rnorm(n = mcs+1 ,mean = 0, sd = 1)*0.001
+    MCS<- v[1]^2+(n - v[m])^2 + sum(diff(v)^2)+ epsilon2[mcs+1] 
+    I_hat<-mat.or.vec(n,mcs)
+    MCS_hat<-mat.or.vec(1,mcs)
+    if(m>0){
+      for(i in 1:mcs){
+        cat(i,"\r")
+        check=0
+        while(check==0){
+          I_hat[,i]<-rbinom(n = n, size=1, prob = alpha)
+          if(sum(I_hat[,i])==m) check=1 
+        }
+        v_hat<-which(I_hat[,i] == 1)
+        MCS_hat[i]<- v_hat[1]^2+(n - v_hat[m])^2 + sum(diff(v_hat)^2)+ epsilon2[i] 
+      }
+    }else{MCS_hat<-epsilon2[-(mcs+1)]+n^2}
+    MCS_hat<-sort(MCS_hat,decreasing=TRUE)
+    crit_val <- quantile(MCS_hat, probs=c(0.01,0.02,0.05,0.95,0.98,0.99))
+    return(list(MCS_Test=MCS, crit_val=crit_val)) 
+  }
+
+#Example: iidTest(i1, alpha = 0.01, mcs = 10000)
+
+############################################################################
+#Conditional Coverage
+############################################################################
+
+ccTest<- function(I,a,alpha, mcs){
+  n=length(I)
+  m<-sum(I) 
+  v<-which(I == 1) 
+  epsilon3<-rnorm(n = mcs +1 ,mean = 0, sd = 1)*0.001
+ 
+  Icc_hat<-mat.or.vec(n,mcs)
+  MCSiid_hat<-mat.or.vec(1,mcs)
+  I_sl<-mat.or.vec(n,mcs)
+  I_sl2<-mat.or.vec(n,mcs)
+  v_sl2<-mat.or.vec(n,mcs)
+  m_sl2<-mat.or.vec(1,mcs)
+  m_hat<-mat.or.vec(1,mcs) 
+  #Die Quantile zum Vergleich
+for(i in 1:mcs){
+    
+    if(m>0){
+    check=0
+    while(check==0){
+      Icc_hat[,i]<-rbinom(n= n, size=1, prob = alpha)
+      if(sum(Icc_hat[,i])>1) check=1
+    }
+    vcc_hat<-which(Icc_hat[,i] == 1)
+     
+    m_hat[i]<-sum(Icc_hat[,i])
+    MCSiid_hat[,i]<- vcc_hat[1]^2+(n - vcc_hat[m_hat[i]])^2 + sum(diff(vcc_hat)^2)+ epsilon3[i] #hier ist ein Problem 
+    }else{MCSiid_hat<-epsilon3[-(mcs+1)]+n^2
+  } 
+}
+    m_min<-max(2,min(m_hat))
+    m_max<-max(m_hat)
+    
+    k<-m_hat[m_min < m_hat & m_hat < m_max] #alle m innerhalb der Grenzen, brauche hier nur fur jede Uberschreitung also 3, 4 oder 5
+    k<-sort(unique(k), decreasing = FALSE) #hier nachfragen
+    m_sl<-mat.or.vec(length(k),mcs)
+    r_k<-mat.or.vec(length(k),1)
+    MCScc_hat<-mat.or.vec(length(k),1)
+
+for (j in 1:length(k)){ #damit verandert sich hier aber r_k und stimmt nicht mehr, ich muss jedem k (3,4 oder 5) genau das eine r_k zuordnen
+  cat(j,"\r")
+  for(i in 1:mcs){
+    
+        check=0
+          while(check==0){
+          I_sl<-replicate(n=mcs,rbinom(n= n, size=1, prob = k[j]/n)) #eine n x mcs matrix fur jedes k
+          if(sum(I_sl[,i])==k[j]) check=1  
+          }
+        m_sl<-sum(I_sl[,i]) 
+        v_sl<-which(I_sl[,i] == 1) 
+        r_k[j]<- 1/mcs*sum(v_sl[1]^2+(n - v_sl[m_sl])^2 + sum(diff(v_sl)^2)) #ein Wert pro Spalte, stimmt jetzt!
+        MCScc_hat[i]<- a*abs(((epsilon3[i]+sum(Icc_hat[,i]))/n - alpha)/alpha) + (1-a)*ifelse(MCSiid_hat[,i]>r_k[j],(MCSiid_hat[,i]-r_k[j])/r_k[j],0)
+        } 
+}  
+MCScc_hat<-sort(MCScc_hat,decreasing=TRUE)
+cc_crit_valc <- quantile(MCScc_hat, probs=c(0.01,0.02,0.05,0.1, 0.9,0.95,0.98,0.99))
+   
+#Test statistik 
+  MCSiid<- v[1]^2+(n - v[m])^2 + sum(diff(v)^2)+ epsilon3[mcs+1] 
+  if(m_min < m &  m < m_max){ #Wenn m innerhalb der Grenzen liegt
+    t<-which(k == m)
+    MCScc<- a*abs(((epsilon3[mcs+1]+m)/n - alpha)/alpha) + (1-a)*ifelse(MCSiid>r_k[t],((MCSiid-r_k[t])/r_k[t]),0) #hier fehlt das er den Wert r_k fur das k = m nimmt
+  }else{ 
+    for(i in 1:mcs){
+      cat(i,"\r")
+    check=0
+    while(check==0){
+      I_sl2<-replicate(n=mcs,rbinom(n= n, size=1, prob = m/n))
+      if(sum(I_sl2[,i])==m) check=1
+      
+    }   
+    v_sl2<-which(I_sl2[,i] == 1)
+    m_sl2<-sum(I_sl2[,i]) 
+    r_m<- 1/mcs*sum(v_sl2[1]^2+(n - v_sl2[m_sl2])^2 + sum(diff(v_sl2)^2))
+    
+    MCScc<- a*abs(((epsilon3[mcs+1]+m)/n - alpha)/alpha) + (1-a)*ifelse(MCSiid>r_m,((MCSiid-r_m)/r_m),0) #ifelse anstelle der Dummy variable
+    }  
+  }
+return(list(MCScc_Test=MCScc, crit_val=cc_crit_valc)) 
+}
+
+
+#Example: ccTest(i1, a=0.7, alpha = 0.01, mcs = 1000)
+
+
+############################################################################
+#one-sided testing for risk-averse investors 
+############################################################################
+
+
+cc1sTest<- function(I,a,alpha, mcs){
+  n=length(I)
+  m<-sum(I) 
+  v<-which(I == 1) 
+  epsilon3<-rnorm(n = mcs +1 ,mean = 0, sd = 1)*0.001
+  
+  Icc_hat<-mat.or.vec(n,mcs)
+  MCSiid_hat<-mat.or.vec(1,mcs)
+  I_sl<-mat.or.vec(n,mcs)
+  I_sl2<-mat.or.vec(n,mcs)
+  v_sl2<-mat.or.vec(n,mcs)
+  m_sl2<-mat.or.vec(1,mcs)
+  m_hat<-mat.or.vec(1,mcs) 
+  #Die Quantile zum Vergleich
+  for(i in 1:mcs){
+    
+    if(m>0){
+      check=0
+      while(check==0){
+        Icc_hat[,i]<-rbinom(n= n, size=1, prob = alpha)
+        if(sum(Icc_hat[,i])>1) check=1
+      }
+      vcc_hat<-which(Icc_hat[,i] == 1)
+      
+      m_hat[i]<-sum(Icc_hat[,i])
+      MCSiid_hat[,i]<- vcc_hat[1]^2+(n - vcc_hat[m_hat[i]])^2 + sum(diff(vcc_hat)^2)+ epsilon3[i] #hier ist ein Problem 
+    }else{MCSiid_hat<-epsilon3[-(mcs+1)]+n^2
+    } 
+  }
+  m_min<-max(2,min(m_hat))
+  m_max<-max(m_hat)
+  
+  k<-m_hat[m_min < m_hat & m_hat < m_max] #alle m innerhalb der Grenzen, brauche hier nur fur jede Uberschreitung also 3, 4 oder 5
+  k<-sort(unique(k), decreasing = FALSE) #hier nachfragen
+  m_sl<-mat.or.vec(length(k),mcs)
+  r_k<-mat.or.vec(length(k),1)
+  MCScc_hat<-mat.or.vec(length(k),1)
+  
+  for (j in 1:length(k)){ #damit verandert sich hier aber r_k und stimmt nicht mehr, ich muss jedem k (3,4 oder 5) genau das eine r_k zuordnen
+    cat(j,"\r")
+    for(i in 1:mcs){
+      
+      check=0
+      while(check==0){
+        I_sl<-replicate(n=mcs,rbinom(n= n, size=1, prob = k[j]/n)) #eine n x mcs matrix fur jedes k
+        if(sum(I_sl[,i])==k[j]) check=1  
+      }
+      m_sl<-sum(I_sl[,i]) 
+      v_sl<-which(I_sl[,i] == 1) 
+      r_k[j]<- 1/mcs*sum(v_sl[1]^2+(n - v_sl[m_sl])^2 + sum(diff(v_sl)^2)) #ein Wert pro Spalte, stimmt jetzt!
+      MCScc_hat[i]<- a*abs(((epsilon3[i]+sum(Icc_hat[,i]))/n - alpha)/alpha) + (1-a)*ifelse(MCSiid_hat[,i]>r_k[j],(MCSiid_hat[,i]-r_k[j])/r_k[j],0)
+    } 
+  }  
+  MCScc_hat<-sort(MCScc_hat,decreasing=TRUE)
+  cc_crit_valc <- quantile(MCScc_hat, probs=c(0.01,0.02,0.05,0.1, 0.9,0.95,0.98,0.99))
+  
+  
+  #Test statistik 
+  MCSiid<- v[1]^2+(n - v[m])^2 + sum(diff(v)^2)+ epsilon3[mcs+1] 
+  if(m<5){ 
+  if(m_min < m &  m < m_max){ #Wenn m innerhalb der Grenzen liegt
+    t<-which(k == m)
+    MCScc<- a*abs(((epsilon3[mcs+1]+m)/n - alpha)/alpha) + (1-a)*ifelse(MCSiid>r_k[t],((MCSiid-r_k[t])/r_k[t]),0) #hier fehlt das er den Wert r_k fur das k = m nimmt
+  }else{ 
+    #Wenn m auserhalb der Grenzen liegt
+    for(i in 1:mcs){
+      cat(i,"\r")
+      check=0
+      while(check==0){
+        I_sl2<-replicate(n=mcs,rbinom(n= n, size=1, prob = m/n))
+        if(sum(I_sl2[,i])==m) check=1
+        
+      }   
+      v_sl2<-which(I_sl2[,i] == 1)
+      m_sl2<-sum(I_sl2[,i]) 
+      r_m<- 1/mcs*sum(v_sl2[1]^2+(n - v_sl2[m_sl2])^2 + sum(diff(v_sl2)^2))
+      
+      MCScc<- a*abs(((epsilon3[mcs+1]+m)/n - alpha)/alpha) + (1-a)*ifelse(MCSiid>r_m,((MCSiid-r_m)/r_m),0) #ifelse anstelle der Dummy variable
+    }  
+  }
+  }else{
+    if(m_min < m &  m < m_max){ #Wenn m innerhalb der Grenzen liegt
+      t<-which(k == m)
+      MCScc<-  (1-a)*ifelse(MCSiid>r_k[t],((MCSiid-r_k[t])/r_k[t]),0) #hier fehlt das er den Wert r_k fur das k = m nimmt
+    }else{ 
+      #Wenn m auserhalb der Grenzen liegt
+      for(i in 1:mcs){
+        cat(i,"\r")
+        check=0
+        while(check==0){
+          I_sl2<-replicate(n=mcs,rbinom(n= n, size=1, prob = m/n))
+          if(sum(I_sl2[,i])==m) check=1
+          
+        }   
+        v_sl2<-which(I_sl2[,i] == 1)
+        m_sl2<-sum(I_sl2[,i]) 
+        r_m<- 1/mcs*sum(v_sl2[1]^2+(n - v_sl2[m_sl2])^2 + sum(diff(v_sl2)^2))
+        
+        MCScc<- (1-a)*ifelse(MCSiid>r_m,((MCSiid-r_m)/r_m),0) 
+      }  
+    }  
+    
+  }
+  return(list(MCScc_Test=MCScc, crit_val=cc_crit_valc)) 
+}
+
+#Example: cc1sTest(i1, a=0.5, alpha = 0.01, mcs = 1000) 
+
+

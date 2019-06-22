@@ -1,0 +1,57 @@
+#Unconditional Coverage
+
+uc<- function(I, alpha, talpha){
+    n <- length(I)
+    m <- sum(I)
+    p <- m/n
+    LR = (-2)*log(((alpha^m)*(1-alpha)^(n-m))/((p^m)*((1-p)^(n-m))))
+    chi2<-qchisq(1-talpha, df=1) 
+    Result <- ifelse(LR<chi2, "Correct Exceedances", "Incorrect Exceedances" )
+    return(list(crit.value = chi2, Teststatistic = LR, Result = Result))   
+}
+#Example: uci1<-uc(i1, alpha = 0.01, talpha = 0.05)
+
+
+#IID-Violations
+
+ind_test=function(V, talpha){
+  J=matrix(ncol=4,nrow=length(V))
+  for (i in 2:length(V)){
+    J[i,1]=V[i-1]==0 & V[i]==0
+    J[i,2]=V[i-1]==0 & V[i]==1
+    J[i,3]=V[i-1]==1 & V[i]==0
+    J[i,4]=V[i-1]==1 & V[i]==1
+  }
+  V_00=sum(J[,1],na.rm=TRUE)
+  V_01=sum(J[,2],na.rm=TRUE)
+  V_10=sum(J[,3],na.rm=TRUE)
+  V_11=sum(J[,4],na.rm=TRUE)
+  p_00=V_00/(V_00+V_01)
+  p_01=V_01/(V_00+V_01)
+  p_10=V_10/(V_10+V_11)
+  p_11=V_11/(V_10+V_11)
+  hat_p=(V_01+V_11)/(V_00+V_01+V_10+V_11)
+  a=(1-hat_p)^(V_00+V_10)*(hat_p)^(V_01+V_11)
+  b=(p_00)^(V_00)*(p_01)^(V_01)*(p_10)^(V_10)*p_11^(V_11)
+  chi2<-qchisq(1-talpha, df=1)
+  Result <- ifelse((-2*log(a/b))<chi2, "Correct H0", "Incorrect H0" )
+  return(list(Teststatistic = -2*log(a/b), crit.value=chi2, Result = Result))
+}
+
+#Example: indi1<-ind_test(i1, talpha = 0.05)
+
+
+#Conditional Coverage
+
+cc_test<-function(V, alpha, talpha){
+  ind<-ind_test(V, talpha)$Teststatistic
+  uc<-uc(V, alpha, talpha)$Teststatistic
+  LR<- ind + uc
+  crit.value <- qchisq(1-talpha, df=2)
+  result <- ifelse(LR<crit.value, "Correct H0", "Incorrect H0" )
+  return(list(Teststatistic = LR, crit.value= crit.value, Result = result))
+}
+
+  
+#Example: cc_test(i1, alpha = 0.01, talpha = 0.05)
+
